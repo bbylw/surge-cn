@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Surge — 静态网站发布</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: {
+              950: '#0f0f0e',
+              900: '#171716',
+              800: '#21211f',
+              700: '#2e2e2b',
+              600: '#444440',
+              500: '#73726c',
+              400: '#a8a29e',
+              300: '#d6d3ce',
+              200: '#e7e5e0',
+              100: '#f5f3ee',
+              50: '#faf9f5',
+            },
+            accent: {
+              DEFAULT: '#e07a5f',
+              soft: '#f2a68a',
+              deep: '#c25a3f',
+            },
+            sage: {
+              DEFAULT: '#81b29a',
+              soft: '#a3c9b6',
+            },
+          },
+          fontFamily: {
+            display: ['Space Grotesk', 'sans-serif'],
+            serif: ['Instrument Serif', 'serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          letterSpacing: {
+            tighter: '-0.04em',
+            tight: '-0.02em',
+          },
+          animation: {
+            'fade-up': 'fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            'fade-in': 'fadeIn 1s ease-out forwards',
+            'shimmer': 'shimmer 3s ease-in-out infinite',
+            'float': 'float 6s ease-in-out infinite',
+            'marquee': 'marquee 30s linear infinite',
+          },
+          keyframes: {
+            fadeUp: {
+              '0%': { opacity: '0', transform: 'translateY(24px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            shimmer: {
+              '0%, 100%': { opacity: '0.4' },
+              '50%': { opacity: '1' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-8px)' },
+            },
+            marquee: {
+              '0%': { transform: 'translateX(0)' },
+              '100%': { transform: 'translateX(-50%)' },
+            },
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --bg: #0f0f0e;
+      --surface: #171716;
+      --border: rgba(230, 225, 215, 0.08);
+      --text: #f5f3ee;
+      --text-muted: #a8a29e;
+      --accent: #e07a5f;
+    }
+
+    * {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .grain::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    .gradient-mesh {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.15;
+      pointer-events: none;
+    }
+
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+                  transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .stagger > * {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+
+    .stagger.is-visible > * {
+      animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .stagger.is-visible > *:nth-child(1) { animation-delay: 0.05s; }
+    .stagger.is-visible > *:nth-child(2) { animation-delay: 0.1s; }
+    .stagger.is-visible > *:nth-child(3) { animation-delay: 0.15s; }
+    .stagger.is-visible > *:nth-child(4) { animation-delay: 0.2s; }
+    .stagger.is-visible > *:nth-child(5) { animation-delay: 0.25s; }
+    .stagger.is-visible > *:nth-child(6) { animation-delay: 0.3s; }
+    .stagger.is-visible > *:nth-child(7) { animation-delay: 0.35s; }
+    .stagger.is-visible > *:nth-child(8) { animation-delay: 0.4s; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .spotlight-card {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .spotlight-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: radial-gradient(
+        400px circle at var(--mouse-x, 50%) var(--mouse-y, -100%),
+        rgba(224, 122, 95, 0.08),
+        transparent 40%
+      );
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .spotlight-card:hover::before {
+      opacity: 1;
+    }
+
+    .number-display {
+      font-variant-numeric: tabular-nums;
+    }
+
+    ::selection {
+      background: rgba(224, 122, 95, 0.3);
+      color: #f5f3ee;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal,
+      .stagger > * {
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="grain relative min-h-[100dvh]">
+
+  <!-- Top Bar -->
+  <div class="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.06] bg-ink-950/60 backdrop-blur-xl">
+    <div class="max-w-[1400px] mx-auto px-6 lg:px-10 py-4 flex items-center justify-between">
+      <a href="#" class="flex items-center gap-2.5 group">
+        <div class="w-8 h-8 bg-accent rounded-md flex items-center justify-center font-display font-bold text-ink-950 text-sm transition-transform group-hover:rotate-6">S</div>
+        <span class="font-display font-medium text-lg tracking-tight">surge</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-1">
+        <a href="#features" class="px-4 py-2 text-sm text-ink-400 hover:text-ink-100 transition-colors">功能</a>
+        <a href="#quickstart" class="px-4 py-2 text-sm text-ink-400 hover:text-ink-100 transition-colors">入门</a>
+        <a href="#docs" class="px-4 py-2 text-sm text-ink-400 hover:text-ink-100 transition-colors">文档</a>
+        <a href="#about" class="px-4 py-2 text-sm text-ink-400 hover:text-ink-100 transition-colors">关于</a>
+      </nav>
+      <div class="flex items-center gap-3">
+        <a href="https://surge.sh" target="_blank" class="hidden sm:inline-flex text-sm text-ink-400 hover:text-ink-100 transition-colors">
+          surge.sh ↗
+        </a>
+        <a href="#quickstart" class="inline-flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-soft text-ink-950 text-sm font-medium rounded-md transition-all hover:-translate-y-0.5">
+          开始使用
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hero Section -->
+  <section class="relative pt-32 pb-24 px-6 lg:px-10 overflow-hidden">
+    <div class="gradient-mesh bg-accent" style="top: -200px; right: -100px;"></div>
+    <div class="gradient-mesh bg-sage" style="bottom: -200px; left: -200px; opacity: 0.1;"></div>
+
+    <div class="relative max-w-[1400px] mx-auto">
+      <div class="grid lg:grid-cols-12 gap-12 items-start pt-12">
+        <!-- Left: Headline -->
+        <div class="lg:col-span-7 space-y-8">
+          <div class="reveal">
+            <div class="inline-flex items-center gap-2 px-3 py-1.5 border border-white/10 rounded-full text-xs text-ink-400 font-medium">
+              <span class="w-1.5 h-1.5 rounded-full bg-sage animate-pulse"></span>
+              v0.24 · 全球 10 个地区 · 1,400 万+ 部署
+            </div>
+          </div>
+
+          <div class="space-y-6">
+            <h1 class="reveal font-display font-medium text-[clamp(2.5rem,6vw,5.5rem)] leading-[0.95] tracking-tighter">
+              用一条命令
+              <br>
+              <span class="italic font-serif font-normal text-accent">发布</span>
+              你的静态网站
+            </h1>
+
+            <p class="reveal text-lg text-ink-400 max-w-xl leading-relaxed">
+              Surge 是为前端开发者打造的静态网站发布工具。
+              免费、快速、全球 CDN。从命令行到上线，只需几秒钟。
+            </p>
+          </div>
+
+          <div class="reveal flex flex-wrap items-center gap-4 pt-2">
+            <a href="#quickstart" class="group inline-flex items-center gap-2 px-6 py-3.5 bg-accent hover:bg-accent-soft text-ink-950 font-medium rounded-md transition-all hover:-translate-y-0.5">
+              立即开始
+              <svg class="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+              </svg>
+            </a>
+            <a href="#docs" class="inline-flex items-center gap-2 px-6 py-3.5 border border-white/10 hover:border-white/20 text-ink-200 font-medium rounded-md transition-colors">
+              浏览文档
+            </a>
+          </div>
+
+          <!-- Stats -->
+          <div class="reveal flex items-center gap-8 pt-8 border-t border-white/[0.06]">
+            <div>
+              <div class="font-display text-3xl font-medium number-display text-ink-100">10<span class="text-accent">+</span></div>
+              <div class="text-sm text-ink-500 mt-1">全球地区</div>
+            </div>
+            <div class="w-px h-10 bg-white/10"></div>
+            <div>
+              <div class="font-display text-3xl font-medium number-display text-ink-100">14M<span class="text-accent">+</span></div>
+              <div class="text-sm text-ink-500 mt-1">部署次数</div>
+            </div>
+            <div class="w-px h-10 bg-white/10"></div>
+            <div>
+              <div class="font-display text-3xl font-medium number-display text-ink-100">∞</div>
+              <div class="text-sm text-ink-500 mt-1">免费域名</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Terminal -->
+        <div class="lg:col-span-5 reveal">
+          <div class="relative">
+            <div class="absolute -inset-4 bg-gradient-to-br from-accent/10 to-sage/10 rounded-2xl blur-xl"></div>
+            <div class="relative bg-ink-900 border border-white/[0.06] rounded-xl overflow-hidden shadow-2xl">
+              <!-- Terminal header -->
+              <div class="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                <div class="flex items-center gap-1.5">
+                  <div class="w-3 h-3 rounded-full bg-ink-700"></div>
+                  <div class="w-3 h-3 rounded-full bg-ink-700"></div>
+                  <div class="w-3 h-3 rounded-full bg-ink-700"></div>
+                </div>
+                <span class="text-xs text-ink-500 font-mono">~/my-site</span>
+                <div class="w-12"></div>
+              </div>
+              <!-- Terminal body -->
+              <div class="p-5 font-mono text-sm space-y-3">
+                <div class="flex items-start gap-2">
+                  <span class="text-sage select-none">$</span>
+                  <div>
+                    <span class="text-ink-300">npm install --global surge</span>
+                  </div>
+                </div>
+                <div class="pl-5 text-ink-500 text-xs">
+                  added 142 packages in 3s
+                </div>
+
+                <div class="flex items-start gap-2 pt-2">
+                  <span class="text-sage select-none">$</span>
+                  <div>
+                    <span class="text-ink-300">surge .</span>
+                    <span class="text-accent"> hello.surge.sh</span>
+                  </div>
+                </div>
+
+                <div class="pl-5 space-y-1.5 text-xs">
+                  <div class="text-ink-400">
+                    <span class="text-ink-600">email:</span> you@example.com
+                  </div>
+                  <div class="text-ink-400">
+                    <span class="text-ink-600">token:</span> ************
+                  </div>
+                  <div class="text-ink-400">
+                    <span class="text-ink-600">project:</span> ./
+                  </div>
+                  <div class="text-ink-400">
+                    <span class="text-ink-600">domain:</span> hello.surge.sh
+                  </div>
+                  <div class="text-ink-400">
+                    <span class="text-ink-600">size:</span> 12 files, 48.3 KB
+                  </div>
+                </div>
+
+                <div class="pl-5 pt-1">
+                  <div class="inline-flex items-center gap-2 text-sage">
+                    <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="font-medium">已发布 — hello.surge.sh</span>
+                  </div>
+                  <div class="text-ink-600 text-xs mt-1">耗时 0.8s · 全球 10 个节点</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Floating badge -->
+          <div class="hidden md:flex absolute -bottom-6 -left-6 items-center gap-3 px-4 py-3 bg-ink-900 border border-white/[0.06] rounded-lg shadow-xl animate-float" style="animation-delay: -2s;">
+            <div class="w-8 h-8 bg-accent/10 rounded-lg flex items-center justify-center">
+              <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+              </svg>
+            </div>
+            <div>
+              <div class="text-sm font-medium">极速部署</div>
+              <div class="text-xs text-ink-500">平均 < 1 秒</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Marquee -->
+  <div class="relative py-6 border-y border-white/[0.06] bg-ink-900/30 overflow-hidden">
+    <div class="flex animate-marquee whitespace-nowrap">
+      <div class="flex items-center gap-12 px-6 text-ink-500 text-sm">
+        <span>静态网站托管</span>
+        <span class="text-accent/50">✦</span>
+        <span>全球 CDN</span>
+        <span class="text-accent/50">✦</span>
+        <span>免费自定义域名</span>
+        <span class="text-accent/50">✦</span>
+        <span>自动 HTTPS</span>
+        <span class="text-accent/50">✦</span>
+        <span>API 优先</span>
+        <span class="text-accent/50">✦</span>
+        <span>CI/CD 集成</span>
+        <span class="text-accent/50">✦</span>
+        <span>增量发布</span>
+        <span class="text-accent/50">✦</span>
+        <span>智能缓存</span>
+        <span class="text-accent/50">✦</span>
+      </div>
+      <div class="flex items-center gap-12 px-6 text-ink-500 text-sm">
+        <span>静态网站托管</span>
+        <span class="text-accent/50">✦</span>
+        <span>全球 CDN</span>
+        <span class="text-accent/50">✦</span>
+        <span>免费自定义域名</span>
+        <span class="text-accent/50">✦</span>
+        <span>自动 HTTPS</span>
+        <span class="text-accent/50">✦</span>
+        <span>API 优先</span>
+        <span class="text-accent/50">✦</span>
+        <span>CI/CD 集成</span>
+        <span class="text-accent/50">✦</span>
+        <span>增量发布</span>
+        <span class="text-accent/50">✦</span>
+        <span>智能缓存</span>
+        <span class="text-accent/50">✦</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features Section -->
+  <section id="features" class="py-28 px-6 lg:px-10 relative">
+    <div class="max-w-[1400px] mx-auto">
+      <!-- Section Header -->
+      <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-16">
+        <div class="space-y-4 max-w-xl reveal">
+          <div class="text-sm text-accent font-medium tracking-wider uppercase">功能特性</div>
+          <h2 class="font-display text-4xl md:text-5xl font-medium tracking-tight leading-[1.1]">
+            为开发者
+            <br>
+            <span class="italic font-serif font-normal text-ink-400">精心设计</span>
+          </h2>
+        </div>
+        <p class="text-ink-400 max-w-md leading-relaxed reveal">
+          从简单的命令行工具到完整的 API 生态，Surge 为你提供发布静态网站所需的一切。
+        </p>
+      </div>
+
+      <!-- Feature Grid - Asymmetric -->
+      <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4 stagger">
+        <!-- Large card 1 -->
+        <div class="md:col-span-2 lg:col-span-3 spotlight-card group p-8 bg-ink-900/50 border border-white/[0.06] rounded-2xl hover:border-white/[0.12] transition-all">
+          <div class="flex items-start justify-between mb-8">
+            <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center">
+              <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+              </svg>
+            </div>
+            <span class="text-xs text-ink-600 font-mono">01</span>
+          </div>
+          <h3 class="font-display text-xl font-medium mb-3">极速部署体验</h3>
+          <p class="text-ink-400 leading-relaxed mb-6">
+            只需一条命令，几秒钟内即可将网站发布到全球 CDN。无需配置服务器，无需复杂的部署流程。
+          </p>
+          <div class="flex items-center gap-2 text-sm text-accent group-hover:gap-3 transition-all">
+            <span>了解更多</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+            </svg>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="md:col-span-2 lg:col-span-2 spotlight-card group p-8 bg-ink-900/50 border border-white/[0.06] rounded-2xl hover:border-white/[0.12] transition-all">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-10 h-10 bg-sage/10 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <span class="text-xs text-ink-600 font-mono">02</span>
+          </div>
+          <h3 class="font-display text-lg font-medium mb-2">完全免费</h3>
+          <p class="text-ink-400 text-sm leading-relaxed">
+            无限自定义域名，无限部署次数。
+          </p>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="md:col-span-2 lg:col-span-1 spotlight-card group p-8 bg-ink-900/50 border border-white/[0.06] rounded-2xl hover:border-white/[0.12] transition-all flex flex-col">
+          <div class="flex items-start justify-between mb-6">
+            <span class="text-xs text-ink-600 font-mono">03</span>
+          </div>
+          <div class="mt-auto">
+            <div class="font-display text-3xl font-medium text-ink-100 mb-1 number-display">10<span class="text-accent">+</span></div>
+            <p class="text-ink-400 text-sm">全球地区</p>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="md:col-span-2 lg:col-span-1 spotlight-card group p-8 bg-ink-900/50 border border-white/[0.06] rounded-2xl hover:border-white/[0.12] transition-all flex flex-col">
+          <div class="flex items-start justify-between mb-6">
+            <span class="text-xs text-ink-600 font-mono">04</span>
+          </div>
+          <div class="mt-auto">
+            <div class="font-display text-3xl font-medium text-ink-100 mb-1">API</div>
+            <p class="text-ink-400 text-sm">优先架构</p>
+          </div>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="md:col-span-2 lg:col-span-2 spotlight-card group p-8 bg-ink-900/50 border border-white/[0.06] rounded-2xl hover:border-white/[0.12] transition-all">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+              </svg>
+            </div>
+            <span class="text-xs text-ink-600 font-mono">05</span>
+          </div>
+          <h3 class="font-display text-lg font-medium mb-2">HTTPS 默认</h3>
+          <p class="text-ink-400 text-sm leading-relaxed">
+            自动 SSL 证书，HTTP 强制跳转。
+          </p>
+        </div>
+
+        <!-- Large card 6 -->
+        <div class="md:col-span-4 lg:col-span-3 spotlight-card group p-8 bg-gradient-to-br from-accent/5 to-transparent border border-accent/10 rounded-2xl hover:border-accent/20 transition-all">
+          <div class="flex items-start justify-between mb-6">
+            <div class="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+            </div>
+            <span class="text-xs text-ink-600 font-mono">06</span>
+          </div>
+          <h3 class="font-display text-xl font-medium mb-3">CI/CD 无缝集成</h3>
+          <p class="text-ink-400 leading-relaxed mb-6">
+            Git Hooks、GitHub Actions、Travis CI、CircleCI、Codeship — 与你现有的工作流完美配合，实现全自动部署。
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <span class="px-2.5 py-1 text-xs bg-ink-800/50 rounded text-ink-400 font-mono">GitHub Actions</span>
+            <span class="px-2.5 py-1 text-xs bg-ink-800/50 rounded text-ink-400 font-mono">Git Hooks</span>
+            <span class="px-2.5 py-1 text-xs bg-ink-800/50 rounded text-ink-400 font-mono">Travis CI</span>
+            <span class="px-2.5 py-1 text-xs bg-ink-800/50 rounded text-ink-400 font-mono">CircleCI</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start Section -->
+  <section id="quickstart" class="py-28 px-6 lg:px-10 relative border-t border-white/[0.06]">
+    <div class="max-w-[1400px] mx-auto">
+      <div class="grid lg:grid-cols-12 gap-16">
+        <!-- Left: Steps -->
+        <div class="lg:col-span-5 space-y-12">
+          <div class="reveal">
+            <div class="text-sm text-accent font-medium tracking-wider uppercase mb-4">快速开始</div>
+            <h2 class="font-display text-4xl md:text-5xl font-medium tracking-tight leading-[1.1] mb-6">
+              三步
+              <span class="italic font-serif font-normal text-ink-400">上线</span>
+              <br>
+              你的网站
+            </h2>
+            <p class="text-ink-400 leading-relaxed">
+              从零到上线，只需几分钟。无需注册账户，无需信用卡。
+            </p>
+          </div>
+
+          <div class="space-y-8 stagger">
+            <!-- Step 1 -->
+            <div class="flex gap-6 group">
+              <div class="flex-shrink-0">
+                <div class="w-10 h-10 border border-white/10 rounded-lg flex items-center justify-center font-display text-sm text-ink-400 group-hover:border-accent/30 group-hover:text-accent transition-colors">
+                  01
+                </div>
+              </div>
+              <div class="pt-0.5">
+                <h3 class="font-display text-lg font-medium mb-2">安装 Node.js</h3>
+                <p class="text-ink-400 text-sm leading-relaxed">
+                  确保你已安装最新版本的 
+                  <a href="https://nodejs.org" target="_blank" class="text-accent hover:underline underline-offset-2">Node.js</a>。
+                  Surge 通过 npm 分发。
+                </p>
+              </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="flex gap-6 group">
+              <div class="flex-shrink-0">
+                <div class="w-10 h-10 border border-white/10 rounded-lg flex items-center justify-center font-display text-sm text-ink-400 group-hover:border-accent/30 group-hover:text-accent transition-colors">
+                  02
+                </div>
+              </div>
+              <div class="pt-0.5 flex-1">
+                <h3 class="font-display text-lg font-medium mb-2">安装 Surge CLI</h3>
+                <p class="text-ink-400 text-sm leading-relaxed mb-3">
+                  使用 npm 全局安装命令行工具。
+                </p>
+                <div class="bg-ink-900 border border-white/[0.06] rounded-lg px-4 py-2.5 font-mono text-sm">
+                  <span class="text-sage">$</span>
+                  <span class="text-ink-300 ml-2">npm install --global surge</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="flex gap-6 group">
+              <div class="flex-shrink-0">
+                <div class="w-10 h-10 bg-accent text-ink-950 rounded-lg flex items-center justify-center font-display text-sm font-medium">
+                  03
+                </div>
+              </div>
+              <div class="pt-0.5 flex-1">
+                <h3 class="font-display text-lg font-medium mb-2">发布你的网站</h3>
+                <p class="text-ink-400 text-sm leading-relaxed mb-3">
+                  在项目目录中运行 surge，按照提示操作即可。
+                </p>
+                <div class="bg-ink-900 border border-white/[0.06] rounded-lg px-4 py-2.5 font-mono text-sm">
+                  <span class="text-sage">$</span>
+                  <span class="text-ink-300 ml-2">surge .</span>
+                  <span class="text-accent"> your-site.surge.sh</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="reveal pt-4">
+            <a href="#docs" class="inline-flex items-center gap-2 text-accent hover:gap-3 transition-all font-medium">
+              查看完整文档
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+              </svg>
+            </a>
+          </div>
+        </div>
+
+        <!-- Right: Tip Card -->
+        <div class="lg:col-span-7 reveal">
+          <div class="sticky top-28">
+            <div class="bg-ink-900/50 border border-white/[0.06] rounded-2xl p-8 md:p-10">
+              <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 bg-accent/10 rounded-lg flex items-center justify-center">
+                  <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                </div>
+                <h3 class="font-display text-xl font-medium">小贴士</h3>
+              </div>
+
+              <div class="space-y-6">
+                <div class="p-5 bg-ink-800/30 rounded-xl border border-white/[0.04]">
+                  <div class="flex items-start gap-3">
+                    <span class="text-accent font-mono text-sm font-medium">→</span>
+                    <div>
+                      <h4 class="font-medium mb-1">记住你的域名</h4>
+                      <p class="text-sm text-ink-400 leading-relaxed">
+                        在项目根目录创建 <code class="px-1.5 py-0.5 bg-ink-700/50 rounded text-xs font-mono text-accent-soft">CNAME</code> 文件，写入你的域名。下次部署时无需再输入。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-5 bg-ink-800/30 rounded-xl border border-white/[0.04]">
+                  <div class="flex items-start gap-3">
+                    <span class="text-sage font-mono text-sm font-medium">→</span>
+                    <div>
+                      <h4 class="font-medium mb-1">忽略文件</h4>
+                      <p class="text-sm text-ink-400 leading-relaxed">
+                        创建 <code class="px-1.5 py-0.5 bg-ink-700/50 rounded text-xs font-mono text-sage-soft">.surgeignore</code> 文件，按 <code class="text-sage-soft font-mono text-xs">.gitignore</code> 语法排除不需要上传的文件。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-5 bg-ink-800/30 rounded-xl border border-white/[0.04]">
+                  <div class="flex items-start gap-3">
+                    <span class="text-sage font-mono text-sm font-medium">→</span>
+                    <div>
+                      <h4 class="font-medium mb-1">自定义 404 页面</h4>
+                      <p class="text-sm text-ink-400 leading-relaxed">
+                        在项目根目录放置 <code class="px-1.5 py-0.5 bg-ink-700/50 rounded text-xs font-mono text-sage-soft">404.html</code> 文件，Surge 会自动将其用作未找到页面。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="p-5 bg-ink-800/30 rounded-xl border border-white/[0.04]">
+                  <div class="flex items-start gap-3">
+                    <span class="text-accent font-mono text-sm font-medium">→</span>
+                    <div>
+                      <h4 class="font-medium mb-1">SPA 单页应用</h4>
+                      <p class="text-sm text-ink-400 leading-relaxed">
+                        创建 <code class="px-1.5 py-0.5 bg-ink-700/50 rounded text-xs font-mono text-accent-soft">200.html</code> 文件，所有未匹配的路由都会回退到这个页面，支持前端路由。
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Docs Section -->
+  <section id="docs" class="py-28 px-6 lg:px-10 relative border-t border-white/[0.06]">
+    <div class="max-w-[1400px] mx-auto">
+      <!-- Section Header -->
+      <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-16">
+        <div class="space-y-4 max-w-xl reveal">
+          <div class="text-sm text-accent font-medium tracking-wider uppercase">文档</div>
+          <h2 class="font-display text-4xl md:text-5xl font-medium tracking-tight leading-[1.1]">
+            探索全部
+            <br>
+            <span class="italic font-serif font-normal text-ink-400">功能</span>
+          </h2>
+        </div>
+        <p class="text-ink-400 max-w-md leading-relaxed reveal">
+          从基础配置到高级技巧，这里有你需要的一切。点击卡片跳转到官方文档。
+        </p>
+      </div>
+
+      <!-- Docs Grid -->
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-px bg-white/[0.06] border border-white/[0.06] rounded-2xl overflow-hidden stagger">
+        <!-- Category 1: Getting Started -->
+        <div class="bg-ink-950 p-8 hover:bg-ink-900/50 transition-colors group">
+          <div class="text-xs text-accent font-medium tracking-wider uppercase mb-4">入门基础</div>
+          <ul class="space-y-3">
+            <li>
+              <a href="https://surge.sh/help/getting-started-with-surge" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>Surge 入门指南</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/adding-a-custom-domain" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>添加自定义域名</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/remembering-a-domain" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>记住域名</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/listing-all-your-projects" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>列出所有项目</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/tearing-down-a-project" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>删除项目</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/adding-collaborators" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>添加协作者</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Category 2: Advanced -->
+        <div class="bg-ink-950 p-8 hover:bg-ink-900/50 transition-colors group">
+          <div class="text-xs text-sage font-medium tracking-wider uppercase mb-4">高级配置</div>
+          <ul class="space-y-3">
+            <li>
+              <a href="https://surge.sh/help/adding-a-custom-404-not-found-page" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-sage transition-colors group/link">
+                <span>自定义 404 页面</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/adding-a-200-page-for-client-side-routing" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-sage transition-colors group/link">
+                <span>客户端路由 200 页面</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/ignoring-files-and-directories" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-sage transition-colors group/link">
+                <span>忽略文件和目录</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/redirecting-www-to-root-automatically" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-sage transition-colors group/link">
+                <span>www 域名重定向</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/adding-redirects" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-sage transition-colors group/link">
+                <span>添加重定向规则</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/adding-multiple-custom-domains" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-sage transition-colors group/link">
+                <span>多个自定义域名</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Category 3: Performance -->
+        <div class="bg-ink-950 p-8 hover:bg-ink-900/50 transition-colors group">
+          <div class="text-xs text-accent-soft font-medium tracking-wider uppercase mb-4">性能与安全</div>
+          <ul class="space-y-3">
+            <li>
+              <a href="https://surge.sh/help/using-clean-urls-automatically" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>简洁 URL</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/using-gzip-automatically" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>自动 Gzip 压缩</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/using-https-by-default" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>强制 HTTPS</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/using-incremental-publishing" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>增量发布</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/using-lucid-caching-automatically" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>Lucid 智能缓存</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/securing-your-custom-domain-with-ssl" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>自定义域名 SSL</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/enabling-cross-origin-resource-sharing" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent-soft transition-colors group/link">
+                <span>跨域资源共享 CORS</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Category 4: Plus & Integrations -->
+        <div class="md:col-span-2 lg:col-span-1 bg-ink-950 p-8 hover:bg-ink-900/50 transition-colors group">
+          <div class="text-xs text-accent font-medium tracking-wider uppercase mb-4">Surge Plus & 集成</div>
+          <ul class="space-y-3">
+            <li>
+              <a href="https://surge.sh/help/upgrading-to-surge-plus" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>升级 Surge Plus</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/adding-password-protection-to-a-project" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>密码保护</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/deploying-continuously-using-git-hooks" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>Git Hooks 持续部署</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://github.com/yavisht/deploy-via-surge.sh-github-action-template" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>GitHub Actions</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+            <li>
+              <a href="https://surge.sh/help/deploying-a-jekyll-project" target="_blank" class="flex items-center justify-between text-ink-200 hover:text-accent transition-colors group/link">
+                <span>部署 Jekyll 项目</span>
+                <svg class="w-4 h-4 opacity-0 -translate-x-2 group-hover/link:opacity-100 group-hover/link:translate-x-0 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Wide: Quote / About strip -->
+        <div class="md:col-span-2 bg-gradient-to-br from-accent/5 via-transparent to-sage/5 p-10 flex flex-col justify-center">
+          <blockquote class="font-serif italic text-2xl md:text-3xl text-ink-200 leading-relaxed mb-4">
+            "专为前端开发者打造的静态网站发布工具——简单、快速、免费。"
+          </blockquote>
+          <div class="text-sm text-ink-500">
+            — Surge 团队
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- About Section -->
+  <section id="about" class="py-28 px-6 lg:px-10 relative border-t border-white/[0.06]">
+    <div class="max-w-[1400px] mx-auto">
+      <div class="grid lg:grid-cols-12 gap-16 items-start">
+        <div class="lg:col-span-5 reveal">
+          <div class="text-sm text-accent font-medium tracking-wider uppercase mb-4">关于 Surge</div>
+          <h2 class="font-display text-4xl md:text-5xl font-medium tracking-tight leading-[1.1]">
+            API 优先
+            <br>
+            <span class="italic font-serif font-normal text-ink-400">
+              为自动化而生
+            </span>
+          </h2>
+        </div>
+
+        <div class="lg:col-span-7 space-y-6 reveal">
+          <p class="text-lg text-ink-300 leading-relaxed">
+            Surge 基于现代化的 API 优先架构构建，从设计之初就考虑了可编程性和可组合性。
+            CLI 中的所有功能都可以通过 API 访问，便于集成到自动化工作流、CI/CD 管道和自定义工具中。
+          </p>
+          <p class="text-ink-400 leading-relaxed">
+            这种 API 优先的方法使 Surge 非常适合 AI 驱动的工作负载——智能体和自动化系统需要大规模部署、更新和管理网站资产。
+            无论你是在构建 AI 驱动的开发工具、自动化内容管道，还是基于智能体的网页发布系统，
+            Surge 都能提供支持大规模程序化部署的基础设施。
+          </p>
+
+          <div class="flex flex-wrap gap-3 pt-4">
+            <a href="https://medium.com/surge-sh/introducing-surge-the-cdn-for-front-end-developers-b4a50a61bcfc" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 border border-white/10 hover:border-white/20 text-ink-200 text-sm rounded-md transition-colors">
+              Medium 介绍
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+            </a>
+            <a href="https://surge.sh/help/why-is-surge-free" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 border border-white/10 hover:border-white/20 text-ink-200 text-sm rounded-md transition-colors">
+              为什么免费？
+            </a>
+            <a href="https://surge.sh/help/about-the-surge-cdn" target="_blank" class="inline-flex items-center gap-2 px-4 py-2 border border-white/10 hover:border-white/20 text-ink-200 text-sm rounded-md transition-colors">
+              关于 CDN
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="py-28 px-6 lg:px-10 relative overflow-hidden">
+    <div class="gradient-mesh bg-accent" style="top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.08;"></div>
+    
+    <div class="relative max-w-3xl mx-auto text-center reveal">
+      <h2 class="font-display text-4xl md:text-6xl font-medium tracking-tight leading-[1.05] mb-6">
+        准备好
+        <span class="italic font-serif font-normal text-accent">发布</span>
+        了吗？
+      </h2>
+      <p class="text-lg text-ink-400 mb-10 max-w-xl mx-auto">
+        免费开始，无需信用卡。用一条命令，将你的网站送到全球用户面前。
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="#quickstart" class="group w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-accent hover:bg-accent-soft text-ink-950 font-medium rounded-md transition-all hover:-translate-y-0.5">
+          立即开始
+          <svg class="w-4 h-4 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
+          </svg>
+        </a>
+        <a href="https://surge.sh" target="_blank" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 border border-white/10 hover:border-white/20 text-ink-200 font-medium rounded-md transition-colors">
+          访问 surge.sh
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/[0.06] py-16 px-6 lg:px-10">
+    <div class="max-w-[1400px] mx-auto">
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-10 mb-16">
+        <div class="col-span-2 md:col-span-4 lg:col-span-2">
+          <a href="#" class="flex items-center gap-2.5 mb-5">
+            <div class="w-8 h-8 bg-accent rounded-md flex items-center justify-center font-display font-bold text-ink-950 text-sm">S</div>
+            <span class="font-display font-medium text-lg">surge</span>
+          </a>
+          <p class="text-sm text-ink-500 leading-relaxed max-w-xs">
+            静态网站发布工具，为前端开发者打造。简单、快速、免费。
+          </p>
+        </div>
+
+        <div>
+          <h4 class="text-sm font-medium text-ink-300 mb-4">产品</h4>
+          <ul class="space-y-2.5 text-sm text-ink-500">
+            <li><a href="#features" class="hover:text-ink-200 transition-colors">功能</a></li>
+            <li><a href="#quickstart" class="hover:text-ink-200 transition-colors">快速开始</a></li>
+            <li><a href="#docs" class="hover:text-ink-200 transition-colors">文档</a></li>
+            <li><a href="https://surge.sh/help/upgrading-to-surge-plus" target="_blank" class="hover:text-ink-200 transition-colors">Surge Plus</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="text-sm font-medium text-ink-300 mb-4">资源</h4>
+          <ul class="space-y-2.5 text-sm text-ink-500">
+            <li><a href="https://surge.sh/help/" target="_blank" class="hover:text-ink-200 transition-colors">帮助中心</a></li>
+            <li><a href="https://surge.sh/help/about-the-surge-cdn" target="_blank" class="hover:text-ink-200 transition-colors">CDN 网络</a></li>
+            <li><a href="https://medium.com/surge-sh" target="_blank" class="hover:text-ink-200 transition-colors">博客</a></li>
+            <li><a href="https://surge.sh/help/chat" target="_blank" class="hover:text-ink-200 transition-colors">在线客服</a></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="text-sm font-medium text-ink-300 mb-4">社区</h4>
+          <ul class="space-y-2.5 text-sm text-ink-500">
+            <li><a href="https://twitter.com/surge_sh" target="_blank" class="hover:text-ink-200 transition-colors">Twitter / X</a></li>
+            <li><a href="https://github.com/sintaxi/surge" target="_blank" class="hover:text-ink-200 transition-colors">GitHub</a></li>
+            <li><a href="https://medium.com/surge-sh" target="_blank" class="hover:text-ink-200 transition-colors">Medium</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="pt-8 border-t border-white/[0.06] flex flex-col md:flex-row items-center justify-between gap-4">
+        <p class="text-xs text-ink-600">
+          © 2012-2026 Chloi Inc. "Surge" 是 Chloi Inc. 的商标。ISC 许可证。
+        </p>
+        <p class="text-xs text-ink-600">
+          Made for developers · Built with care
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Intersection Observer for reveal animations
+    const observerOptions = {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, observerOptions);
+
+    document.querySelectorAll('.reveal, .stagger').forEach(el => {
+      observer.observe(el);
+    });
+
+    // Spotlight card effect
+    document.querySelectorAll('.spotlight-card').forEach(card => {
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        card.style.setProperty('--mouse-x', x + 'px');
+        card.style.setProperty('--mouse-y', y + 'px');
+      });
+    });
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        const targetId = this.getAttribute('href');
+        if (targetId === '#') return;
+        const target = document.querySelector(targetId);
+        if (target) {
+          e.preventDefault();
+          const offset = 80;
+          const targetPosition = target.getBoundingClientRect().top + window.pageYOffset - offset;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
